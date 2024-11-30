@@ -1,5 +1,8 @@
-from flask import Blueprint, request
+from flask import Blueprint, request, jsonify
 
+from .schemas.input import AuthSchema as AuthInputSchema
+from .schemas.output import AuthSchema as AuthOutputSchema
+from .schemas.output import RegSchema as RegOutputSchema
 from .services import auth_agent, reg_agent, navigation_agent, recommendation_agent, blood_test_agent
 
 main = Blueprint("main", __name__)
@@ -7,28 +10,25 @@ main = Blueprint("main", __name__)
 
 @main.route("/auth", methods=["POST"])
 def auth():
-    username = request.form.get("username")
-    password = request.form.get("password")
+    data = AuthInputSchema().load(request.get_json())
 
-    if username and password:
-        output = auth_agent(username, password)
-    else:
-        return "Username and password are required", 400
+    username = data["username"]
+    password = data["password"]
 
-    return output, 200
+    output = auth_agent(username, password)
+    return jsonify(AuthOutputSchema().dump(output)), 200
 
 
 @main.route("/reg", methods=["POST"])
 def reg():
-    username = request.form.get("username")
-    password = request.form.get("password")
+    data = AuthInputSchema().load(request.get_json())
 
-    if not (username and password):
-        return "Username and password are required", 400
+    username = data["username"]
+    password = data["password"]
 
-    reg_agent(username, password)
+    output = reg_agent(username, password)
 
-    return "Registration successful", 200
+    return jsonify(RegOutputSchema().dump(output)), 200
 
 
 @main.route("/nav", methods=["POST"])
@@ -44,7 +44,6 @@ def nav():
     return "Navigation successful", 200
 
 
-    
 @main.route("/rec", methods=["POST"])
 def nav():
     node_name = request.form.get("node_name")

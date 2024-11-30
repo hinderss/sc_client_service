@@ -11,6 +11,5 @@ class Config:
         "recommendation_agent": "service.agents.ostis.OstisRecommendationAgent",
         "blood_test_agent": "service.agents.ostis.OstisBloodTestAgent"
     }
-    OSTIS_URL = "ws://localhost:8090/ws_json"
-    PORTAL_URL = "http://localhost:1025"
+    OSTIS_URL = config['DEFAULT']['ostis_url']
 

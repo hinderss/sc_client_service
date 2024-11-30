@@ -1,7 +1,5 @@
-import sys
 from enum import Enum
 import sc_client.client as client
-import requests
 from sc_client.models import (
     ScAddr,
     ScEventParams,
@@ -15,15 +13,17 @@ from sc_client.constants.common import ScEventType
 from sc_client.constants import sc_types
 from threading import Event  # Import Event for signaling
 
-from service.agents.abstract.auth_agent import AuthAgent
+from service.agents.abstract.auth_agent import AuthAgent, RegStatus, AuthStatus
 from service.agents.abstract.navigation_agent import NavigationAgent
 from service.agents.abstract.recommendation_agent import RecommendationAgent
 from service.agents.abstract.blood_test_agent import BloodTestAgent
 from config import Config
+from service.exceptions import AgentError
 
 # Initialize payload and event
 payload = None
 callback_event = Event()
+
 
 def create_link(client, content: str):
     construction = ScConstruction()
@@ -32,11 +32,13 @@ def create_link(client, content: str):
     link = client.create_elements(construction)
     return link[0]
 
+
 def get_node(client) -> ScAddr:
     construction = ScConstruction()
     construction.create_node(sc_types.NODE_CONST)
     main_node: ScAddr = client.create_elements(construction)[0]
     return main_node
+
 
 def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
     global payload
@@ -52,7 +54,6 @@ def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
         ScIdtfResolveParams(idtf='action_finished_with_error', type=sc_types.NODE_CONST_CLASS)
     )[0]
 
-    respond_url = Config.PORTAL_URL
     if trg.value == succ_node.value:
         nrel_result = client.resolve_keynodes(
             ScIdtfResolveParams(idtf='nrel_result', type=sc_types.NODE_CONST_CLASS)
@@ -82,6 +83,7 @@ def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
     if not payload:
         return result.FAILURE
     return result.SUCCESS
+
 
 def call_back_multiple(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
     global payload
@@ -136,12 +138,12 @@ class result(Enum):
     SUCCESS = 0
     FAILURE = 1
 
+
 class Ostis:
     def __init__(self, url):
         self.ostis_url = url
 
-    def call_agent(self, action_name: str, username, password) -> None:
-        global payload
+    def call_agent(self, action_name: str, username, password) -> str:
         client.connect(self.ostis_url)
         username_lnk = create_link(client, username)
         password_lnk = create_link(client, password)
@@ -181,13 +183,14 @@ class Ostis:
         client.events_create(event_params)
         client.template_generate(template)
 
-        # Wait for the callback with a timeout
+        global payload
         if callback_event.wait(timeout=10):
             while not payload:
                 continue
-            return payload  # Return the payload if event is set
+            return payload
         else:
-            return {"message": "Timeout: No response from agent"}
+            raise AgentError(524, "Timeout")
+
 
     def call_agent_blood_test(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang="rus") -> None:
         global payload
@@ -353,6 +356,7 @@ class Ostis:
 
 
 
+
 class OstisAuthAgent(AuthAgent):
     def __init__(self):
         self.ostis = Ostis(Config.OSTIS_URL)
@@ -360,12 +364,28 @@ class OstisAuthAgent(AuthAgent):
     def reg_agent(self, username: str, password: str):
         global payload
         payload = None
-        return self.ostis.call_agent("action_reg", username, password)
+        agent_response = self.ostis.call_agent("action_reg", username, password)
+        if agent_response == "User created":
+            return {"status": RegStatus.CREATED}
+        elif agent_response == "User exists":
+            return {
+                "status": RegStatus.EXISTS,
+                "message": "User with that credentials already exists.",
+                }
+        raise AgentError
 
     def auth_agent(self, username: str, password: str):
         global payload
         payload = None
-        return self.ostis.call_agent("action_auth", username, password)
+        agent_response = self.ostis.call_agent("action_auth", username, password)
+        if agent_response == "Valid":
+            return {"status": AuthStatus.VALID}
+        elif agent_response == "Invalid":
+            return {
+                "status": AuthStatus.INVALID,
+                "message": "Invalid credentials",
+            }
+        raise AgentError
 
 
 class OstisBloodTestAgent(BloodTestAgent):
@@ -391,23 +411,8 @@ class OstisRecommendationAgent(RecommendationAgent):
 class OstisNavigationAgent(NavigationAgent):
     def __init__(self):
         self.ostis = Ostis(Config.OSTIS_URL)
-         
+
     def execute(self, node_name: str, node_lang: str = "rus"):
         global payload
         payload = None
         return self.ostis.call_navigation_agent(node_name, node_lang)
-
-
-def auth_agent(username: str, password: str) -> None:
-    ostis = Ostis(Config.OSTIS_URL)
-    return ostis.call_agent("action_auth", username, password)
-
-def reg_agent(username: str, password: str) -> None:
-    ostis = Ostis(Config.OSTIS_URL)
-    return ostis.call_agent("action_reg", username, password)
-
-if __name__ == "__main__":
-    if sys.argv[1] == "a":
-        print(auth_agent(sys.argv[2], sys.argv[3]))
-    elif sys.argv[1] == "r":
-        print(reg_agent(sys.argv[2], sys.argv[3]))
