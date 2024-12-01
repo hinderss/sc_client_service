@@ -1,6 +1,6 @@
 from flask import Blueprint, request
 
-from .services import auth_agent, reg_agent
+from .services import auth_agent, reg_agent, navigation_agent, recommendation_agent, blood_test_agent
 
 main = Blueprint("main", __name__)
 
@@ -29,3 +29,29 @@ def reg():
     reg_agent(username, password)
 
     return "Registration successful", 200
+
+
+@main.route("/nav", methods=["POST"])
+def nav():
+    node_name = request.form.get("node_name")
+    node_lang = request.form.get("node_lang")
+
+    if not (node_name and node_lang):
+        return "Node name is required", 400
+
+    navigation_agent(node_name, node_lang)
+
+    return "Navigation successful", 200
+
+
+    
+@main.route("/rec", methods=["POST"])
+def nav():
+    node_name = request.form.get("node_name")
+
+    if not node_name:
+        return "Node name is required", 400
+
+    recommendation_agent(node_name)
+
+    return "Recommendation successful", 200
