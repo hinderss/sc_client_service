@@ -33,6 +33,14 @@ def create_link(client, content: str):
     return link[0]
 
 
+def create_link_float(client, content: float):
+    construction = ScConstruction()
+    to_find_content = ScLinkContent(content, ScLinkContentType.FLOAT)
+    construction.create_link(sc_types.LINK_CONST, to_find_content)
+    link = client.create_elements(construction)
+    return link[0]
+
+
 def get_node(client) -> ScAddr:
     construction = ScConstruction()
     construction.create_node(sc_types.NODE_CONST)
@@ -76,7 +84,7 @@ def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
         link_data = client.get_link_content(link_res)[0].data
         payload = link_data
     elif trg.value == unsucc_node.value or trg.value == node_err.value:
-        raise AgentError
+        raise AgentError("Didn't find the node")
 
     callback_event.set()
     if not payload:
@@ -123,7 +131,7 @@ def call_back_multiple(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
 
         payload = diseases_result
     elif trg.value == unsucc_node.value or trg.value == node_err.value:
-        raise AgentError
+        raise AgentError("Didn't find the node")
 
     callback_event.set()
     if not payload:
@@ -190,9 +198,10 @@ class Ostis:
 
     def call_agent_blood_test(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang="rus") -> None:
         client.connect(self.ostis_url)
-        wbc_lnk = create_link(client, str(wbc_val))
-        rbc_lnk = create_link(client, str(rbc_val))
-        platelets_lnk = create_link(client, str(platelets_val))
+
+        wbc_lnk = create_link_float(client, wbc_val)
+        rbc_lnk = create_link_float(client, rbc_val)
+        platelets_lnk = create_link_float(client, platelets_val)
         node_lang_lnk = create_link(client, node_lang)
 
         rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf='rrel_1', type=sc_types.NODE_CONST_ROLE))[0]
@@ -364,9 +373,9 @@ class OstisAuthAgent(AuthAgent):
         elif agent_response == "User exists":
             return {
                 "status": RegStatus.EXISTS,
-                "message": "User with that credentials already exists.",
+                "message": "User with these credentials already exists.",
                 }
-        raise AgentError
+        raise AgentError("Reg agent error")
 
     def auth_agent(self, username: str, password: str):
         global payload
@@ -379,7 +388,7 @@ class OstisAuthAgent(AuthAgent):
                 "status": AuthStatus.INVALID,
                 "message": "Invalid credentials",
             }
-        raise AgentError
+        raise AgentError("Auth agent error")
 
 
 class OstisBloodTestAgent(BloodTestAgent):
