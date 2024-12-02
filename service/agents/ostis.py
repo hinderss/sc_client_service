@@ -74,12 +74,11 @@ def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
         gen_res = client.template_search(res_templ)[0]
         link_res = gen_res.get("_link_res")
         link_data = client.get_link_content(link_res)[0].data
-        payload = {"message": link_data}
+        payload = link_data
     elif trg.value == unsucc_node.value or trg.value == node_err.value:
-        payload = {"message": "Agent error"}
+        raise AgentError
 
-    callback_event.set()  # Signal the event when done
-    print("Callback", payload)
+    callback_event.set()
     if not payload:
         return result.FAILURE
     return result.SUCCESS
@@ -99,7 +98,6 @@ def call_back_multiple(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
         ScIdtfResolveParams(idtf='action_finished_with_error', type=sc_types.NODE_CONST_CLASS)
     )[0]
 
-    respond_url = Config.PORTAL_URL
     if trg.value == succ_node.value:
         nrel_result = client.resolve_keynodes(
             ScIdtfResolveParams(idtf='nrel_result', type=sc_types.NODE_CONST_CLASS)
@@ -123,12 +121,11 @@ def call_back_multiple(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
             link_data = client.get_link_content(link_res)[0].data
             diseases_result.append(link_data)
 
-        payload = {"message": diseases_result}
+        payload = diseases_result
     elif trg.value == unsucc_node.value or trg.value == node_err.value:
-        payload = {"message": "Agent error"}
+        raise AgentError
 
-    callback_event.set()  # Signal the event when done
-    print("Callback", payload)
+    callback_event.set()
     if not payload:
         return result.FAILURE
     return result.SUCCESS
@@ -191,9 +188,7 @@ class Ostis:
         else:
             raise AgentError(524, "Timeout")
 
-
     def call_agent_blood_test(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang="rus") -> None:
-        global payload
         client.connect(self.ostis_url)
         wbc_lnk = create_link(client, str(wbc_val))
         rbc_lnk = create_link(client, str(rbc_val))
@@ -254,12 +249,13 @@ class Ostis:
         client.template_generate(template)
 
         # Wait for the callback with a timeout
+        global payload
         if callback_event.wait(timeout=10):
             while not payload:
                 continue
             return payload  # Return the payload if event is set
         else:
-            return {"message": "Timeout: No response from agent"}
+            raise AgentError(524, "Timeout")
 
     def call_navigation_agent(self, node_name: str, node_lang="rus") -> None:
         global payload
@@ -304,13 +300,13 @@ class Ostis:
         client.events_create(event_params)
         client.template_generate(template)
 
-        # Wait for the callback with a timeout
+        global payload
         if callback_event.wait(timeout=10):
             while not payload:
                 continue
-            return payload  # Return the payload if event is set
+            return payload
         else:
-            return {"message": "Timeout: No response from agent"}
+            raise AgentError(524, "Timeout")
 
     def call_recomendation_agent(self, node_name: str) -> None:
         global payload
@@ -346,15 +342,13 @@ class Ostis:
         client.events_create(event_params)
         client.template_generate(template)
 
-        # Wait for the callback with a timeout
+        global payload
         if callback_event.wait(timeout=10):
             while not payload:
                 continue
-            return payload  # Return the payload if event is set
+            return payload
         else:
-            return {"message": "Timeout: No response from agent"}
-
-
+            raise AgentError(524, "Timeout")
 
 
 class OstisAuthAgent(AuthAgent):
@@ -395,7 +389,7 @@ class OstisBloodTestAgent(BloodTestAgent):
     def execute(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang: str = "rus"):
         global payload
         payload = None
-        return self.ostis.call_agent_blood_test(wbc_val, rbc_val, platelets_val, node_lang)
+        return {"message": self.ostis.call_agent_blood_test(wbc_val, rbc_val, platelets_val, node_lang)}
 
 
 class OstisRecommendationAgent(RecommendationAgent):
@@ -405,7 +399,7 @@ class OstisRecommendationAgent(RecommendationAgent):
     def execute(self, node_name: str):
         global payload
         payload = None
-        return self.ostis.call_recomendation_agent(node_name)
+        return {"message": self.ostis.call_recomendation_agent(node_name)}
 
 
 class OstisNavigationAgent(NavigationAgent):
@@ -415,4 +409,4 @@ class OstisNavigationAgent(NavigationAgent):
     def execute(self, node_name: str, node_lang: str = "rus"):
         global payload
         payload = None
-        return self.ostis.call_navigation_agent(node_name, node_lang)
+        return {"message": self.ostis.call_navigation_agent(node_name, node_lang)}

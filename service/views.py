@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 
-from .schemas.input import AuthSchema as AuthInputSchema
+from .schemas.input import AuthSchema as AuthInputSchema, QuerySchema, BloodSchema
 from .schemas.output import AuthSchema as AuthOutputSchema
 from .schemas.output import RegSchema as RegOutputSchema
 from .services import auth_agent, reg_agent, navigation_agent, recommendation_agent, blood_test_agent
@@ -33,24 +33,35 @@ def reg():
 
 @main.route("/nav", methods=["POST"])
 def nav():
-    node_name = request.form.get("node_name")
-    node_lang = request.form.get("node_lang")
+    data = QuerySchema().load(request.get_json())
 
-    if not (node_name and node_lang):
-        return "Node name is required", 400
+    query = data["query"]
+    language = data["language"]
 
-    navigation_agent(node_name, node_lang)
+    output = navigation_agent(query, language)
 
-    return "Navigation successful", 200
+    return jsonify(output), 200
 
 
 @main.route("/rec", methods=["POST"])
-def nav():
-    node_name = request.form.get("node_name")
+def rec():
+    data = QuerySchema().load(request.get_json())
 
-    if not node_name:
-        return "Node name is required", 400
+    query = data["query"]
 
-    recommendation_agent(node_name)
+    output = recommendation_agent(query)
 
-    return "Recommendation successful", 200
+    return jsonify(output), 200
+
+
+@main.route("/blood", methods=["POST"])
+def blood():
+    data = BloodSchema().load(request.get_json())
+
+    wbc = data["wbc"]
+    rbc = data["rbc"]
+    platelets = data["platelets"]
+
+    output = blood_test_agent(wbc, rbc, platelets)
+
+    return jsonify(output), 200
