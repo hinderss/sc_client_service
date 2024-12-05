@@ -8,11 +8,10 @@ from .views import main
 def create_app():
     app = Flask(__name__)
     app.config.from_object("config.Config")
+    register_error_handlers(app)
 
     app.register_blueprint(main)
 
     app.config['agents'] = load_agents()
-
-    register_error_handlers(app)
 
     return app

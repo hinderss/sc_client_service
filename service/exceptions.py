@@ -3,7 +3,7 @@ class APIError(Exception):
     message = "A client error occurred."
     description = None
 
-    def __init__(self, code=None, message=None, description=None):
+    def __init__(self, code=None, message=None, description: dict = None):
         if code is not None:
             self.code = code
         if message is not None:

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 
-class BloodAnalysisAgent(ABC):
+class BloodVitaminAgent(ABC):
     @abstractmethod
     def execute(
         self,

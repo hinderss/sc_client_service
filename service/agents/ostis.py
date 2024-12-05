@@ -14,7 +14,8 @@ from sc_client.constants import sc_types
 from threading import Event  # Import Event for signaling
 
 from service.agents.abstract.auth_agent import AuthAgent, RegStatus, AuthStatus
-from service.agents.abstract.blood_analysis import BloodAnalysisAgent
+from service.agents.abstract.blood_analysis import BloodVitaminAgent
+from service.agents.abstract.blood_hormones_test_agent import BloodHormonesTestAgent
 from service.agents.abstract.blood_micronutrients import BloodMicronutrientsAgent
 from service.agents.abstract.navigation_agent import NavigationAgent
 from service.agents.abstract.recommendation_agent import RecommendationAgent
@@ -55,19 +56,13 @@ def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
     callback_event.clear()  # Clear the event at the start of callback
 
     succ_node = client.resolve_keynodes(
-        ScIdtfResolveParams(
-            idtf="action_finished_successfully", type=sc_types.NODE_CONST_CLASS
-        )
+        ScIdtfResolveParams(idtf="action_finished_successfully", type=sc_types.NODE_CONST_CLASS)
     )[0]
     unsucc_node = client.resolve_keynodes(
-        ScIdtfResolveParams(
-            idtf="action_finished_unsuccessfully", type=sc_types.NODE_CONST_CLASS
-        )
+        ScIdtfResolveParams(idtf="action_finished_unsuccessfully", type=sc_types.NODE_CONST_CLASS)
     )[0]
     node_err = client.resolve_keynodes(
-        ScIdtfResolveParams(
-            idtf="action_finished_with_error", type=sc_types.NODE_CONST_CLASS
-        )
+        ScIdtfResolveParams(idtf="action_finished_with_error", type=sc_types.NODE_CONST_CLASS)
     )[0]
 
     if trg.value == succ_node.value:
@@ -105,19 +100,13 @@ def call_back_multiple(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
     callback_event.clear()  # Clear the event at the start of callback
 
     succ_node = client.resolve_keynodes(
-        ScIdtfResolveParams(
-            idtf="action_finished_successfully", type=sc_types.NODE_CONST_CLASS
-        )
+        ScIdtfResolveParams(idtf="action_finished_successfully", type=sc_types.NODE_CONST_CLASS)
     )[0]
     unsucc_node = client.resolve_keynodes(
-        ScIdtfResolveParams(
-            idtf="action_finished_unsuccessfully", type=sc_types.NODE_CONST_CLASS
-        )
+        ScIdtfResolveParams(idtf="action_finished_unsuccessfully", type=sc_types.NODE_CONST_CLASS)
     )[0]
     node_err = client.resolve_keynodes(
-        ScIdtfResolveParams(
-            idtf="action_finished_with_error", type=sc_types.NODE_CONST_CLASS
-        )
+        ScIdtfResolveParams(idtf="action_finished_with_error", type=sc_types.NODE_CONST_CLASS)
     )[0]
 
     if trg.value == succ_node.value:
@@ -141,10 +130,7 @@ def call_back_multiple(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
         for gen_res in client.template_search(res_templ):
             link_res = gen_res.get("_node_res")
             link_data = client.get_link_content(link_res)[0].data
-            print(link_data)
             diseases_result.append(link_data)
-        if len(diseases_result) == 0:
-            diseases_result.append("Nothing")
 
         payload = diseases_result
     elif trg.value == unsucc_node.value or trg.value == node_err.value:
@@ -169,18 +155,10 @@ class Ostis:
         client.connect(self.ostis_url)
         username_lnk = create_link(client, username)
         password_lnk = create_link(client, password)
-        rrel_1 = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE)
-        )[0]
-        rrel_2 = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE)
-        )[0]
-        initiated_node = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS)
-        )[0]
-        action_agent = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf=action_name, type=sc_types.NODE_CONST_CLASS)
-        )[0]
+        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE))[0]
+        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf=action_name, type=sc_types.NODE_CONST_CLASS))[0]
         main_node = get_node(client)
 
         template = ScTemplate()
@@ -221,9 +199,7 @@ class Ostis:
         else:
             raise AgentError(524, "Timeout")
 
-    def call_agent_blood_test(
-        self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang="rus"
-    ) -> None:
+    def call_agent_blood_test(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang="rus", action="action_blood_test") -> None:
         client.connect(self.ostis_url)
 
         wbc_lnk = create_link_float(client, wbc_val)
@@ -231,27 +207,13 @@ class Ostis:
         platelets_lnk = create_link_float(client, platelets_val)
         node_lang_lnk = create_link(client, node_lang)
 
-        rrel_1 = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE)
-        )[0]
-        rrel_2 = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE)
-        )[0]
-        rrel_3 = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="rrel_3", type=sc_types.NODE_CONST_ROLE)
-        )[0]
-        rrel_4 = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="rrel_4", type=sc_types.NODE_CONST_ROLE)
-        )[0]
+        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_3 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_3", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_4 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_4", type=sc_types.NODE_CONST_ROLE))[0]
 
-        initiated_node = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS)
-        )[0]
-        action_agent = client.resolve_keynodes(
-            ScIdtfResolveParams(
-                idtf="action_blood_test", type=sc_types.NODE_CONST_CLASS
-            )
-        )[0]
+        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf=action, type=sc_types.NODE_CONST_CLASS))[0]
         main_node = get_node(client)
 
         template = ScTemplate()
@@ -294,9 +256,7 @@ class Ostis:
             "_main_node",
         )
 
-        event_params = ScEventParams(
-            main_node, ScEventType.ADD_INGOING_EDGE, call_back_multiple
-        )
+        event_params = ScEventParams(main_node, ScEventType.ADD_INGOING_EDGE, call_back_multiple)
         client.events_create(event_params)
         client.template_generate(template)
 
@@ -315,19 +275,11 @@ class Ostis:
         node_lnk = create_link(client, node_name)
         node_lang_lnk = create_link(client, node_lang)
 
-        rrel_1 = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE)
-        )[0]
-        rrel_2 = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE)
-        )[0]
+        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE))[0]
 
-        initiated_node = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS)
-        )[0]
-        action_agent = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="action_navigate", type=sc_types.NODE_CONST_CLASS)
-        )[0]
+        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_navigate", type=sc_types.NODE_CONST_CLASS))[0]
         main_node = get_node(client)
 
         template = ScTemplate()
@@ -373,16 +325,10 @@ class Ostis:
         client.connect(self.ostis_url)
         node_lnk = create_link(client, node_name)
 
-        rrel_1 = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE)
-        )[0]
+        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
 
-        initiated_node = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS)
-        )[0]
-        action_agent = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf="action_rec", type=sc_types.NODE_CONST_CLASS)
-        )[0]
+        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_rec", type=sc_types.NODE_CONST_CLASS))[0]
         main_node = get_node(client)
 
         template = ScTemplate()
@@ -410,6 +356,8 @@ class Ostis:
 
         global payload
         if callback_event.wait(timeout=10):
+            if payload == "none":
+                return None
             while not payload:
                 continue
             return payload
@@ -442,7 +390,7 @@ class Ostis:
             "_main_node",
         )
 
-    def call_blood_analysis_agent(
+    def call_blood_vitamin_agent(
         self,
         vitamin_e: float,
         vitamin_d: float,
@@ -547,6 +495,8 @@ class Ostis:
 
         global payload
         if callback_event.wait(timeout=10):
+            if payload == "none":
+                return None
             while not payload:
                 continue
             return payload
@@ -589,20 +539,26 @@ class OstisBloodTestAgent(BloodTestAgent):
     def __init__(self):
         self.ostis = Ostis(Config.OSTIS_URL)
 
-    def execute(
-        self,
-        wbc_val: float,
-        rbc_val: float,
-        platelets_val: float,
-        node_lang: str = "rus",
-    ):
+    def execute(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang: str = "rus"):
         global payload
         payload = None
-        return {
-            "message": self.ostis.call_agent_blood_test(
-                wbc_val, rbc_val, platelets_val, node_lang
-            )
-        }
+        output = self.ostis.call_agent_blood_test(wbc_val, rbc_val, platelets_val, node_lang)
+        if sorted(output) == sorted(["No disease"]):
+            output = None
+        return {"message": output}
+
+
+class OstisHormonesBloodTestAgent(BloodHormonesTestAgent):
+    def __init__(self):
+        self.ostis = Ostis(Config.OSTIS_URL)
+
+    def execute(self, tsh_val: float, fsh_val: float, lh_val: float, node_lang: str = "rus"):
+        global payload
+        payload = None
+        output = self.ostis.call_agent_blood_test(tsh_val, fsh_val, lh_val, node_lang, "action_blood_test_for_hormones")
+        if sorted(output) == sorted(["No disease"]):
+            output = None
+        return {"message": output}
 
 
 class OstisRecommendationAgent(RecommendationAgent):
@@ -625,7 +581,7 @@ class OstisNavigationAgent(NavigationAgent):
         return {"message": self.ostis.call_navigation_agent(node_name, node_lang)}
 
 
-class OstisBloodAnalysisAgent(BloodAnalysisAgent):
+class OstisBloodVitaminAgent(BloodVitaminAgent):
     def __init__(self):
         self.ostis = Ostis(Config.OSTIS_URL)
 
@@ -645,7 +601,7 @@ class OstisBloodAnalysisAgent(BloodAnalysisAgent):
         global payload
         payload = None
         return {
-            "message": self.ostis.call_blood_analysis_agent(
+            "message": self.ostis.call_blood_vitamin_agent(
                 vitamin_e,
                 vitamin_d,
                 vitamin_k,
@@ -659,7 +615,6 @@ class OstisBloodAnalysisAgent(BloodAnalysisAgent):
             )
         }
 
-    
 
 class OstisBloodMicronutrientsAgent(BloodMicronutrientsAgent):
     def __init__(self):
@@ -673,10 +628,7 @@ class OstisBloodMicronutrientsAgent(BloodMicronutrientsAgent):
     ):
         global payload
         payload = None
-        return {
-            "message": self.ostis.call_blood_micronutrients_agent(
-                ca_val,
-                mg_val,
-                fe_val,
-            )
-        }
+        output = self.ostis.call_blood_micronutrients_agent(ca_val, mg_val, fe_val)
+        if sorted(output) == sorted(["Nothing"]):
+            output = None
+        return {"message": output}

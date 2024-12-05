@@ -5,18 +5,18 @@ from .schemas.input import (
     BloodAnalysisSchema,
     BloodMicronutrientsSchema,
     QuerySchema,
-    BloodSchema,
+    BloodSchema, BloodHormonesSchema,
 )
-from .schemas.output import AuthSchema as AuthOutputSchema
+from .schemas.output import AuthSchema as AuthOutputSchema, BaseMessageSchema, ListMessageSchema
 from .schemas.output import RegSchema as RegOutputSchema
 from .services import (
     auth_agent,
-    blood_analysis_agent,
+    blood_vitamin_agent,
     blood_micronutrients_agent,
     reg_agent,
     navigation_agent,
     recommendation_agent,
-    blood_test_agent,
+    blood_test_agent, blood_hormones_test_agent,
 )
 
 main = Blueprint("main", __name__)
@@ -50,11 +50,11 @@ def nav():
     data = QuerySchema().load(request.get_json())
 
     query = data["query"]
-    language = data["language"]
+    language = data.get("language")
 
     output = navigation_agent(query, language)
 
-    return jsonify(output), 200
+    return jsonify(BaseMessageSchema().dump(output)), 200
 
 
 @main.route("/rec", methods=["POST"])
@@ -65,7 +65,7 @@ def rec():
 
     output = recommendation_agent(query)
 
-    return jsonify(output), 200
+    return jsonify(BaseMessageSchema().dump(output)), 200
 
 
 @main.route("/blood", methods=["POST"])
@@ -78,10 +78,10 @@ def blood():
 
     output = blood_test_agent(wbc, rbc, platelets)
 
-    return jsonify(output), 200
+    return jsonify(ListMessageSchema().dump(output)), 200
 
 
-@main.route("/blood_analysis", methods=["POST"])
+@main.route("/blood_vitamin", methods=["POST"])
 def blood_analysis():
     data = BloodAnalysisSchema().load(request.get_json())
 
@@ -96,7 +96,7 @@ def blood_analysis():
     vitamin_a = data["vitamin_a"]
     vitamin_b6 = data["vitamin_b6"]
 
-    output = blood_analysis_agent(
+    output = blood_vitamin_agent(
         vitamin_e,
         vitamin_d,
         vitamin_k,
@@ -109,16 +109,16 @@ def blood_analysis():
         vitamin_b6,
     )
 
-    return jsonify(output), 200
+    return jsonify(ListMessageSchema().dump(output)), 200
 
 
 @main.route("/blood_micronutrients", methods=["POST"])
 def blood_micronutrients():
     data = BloodMicronutrientsSchema().load(request.get_json())
 
-    ca_val = data["ca_val"]
-    mg_val = data["mg_val"]
-    fe_val = data["fe_val"]
+    ca_val = data["ca"]
+    mg_val = data["mg"]
+    fe_val = data["fe"]
 
     output = blood_micronutrients_agent(
         ca_val,
@@ -126,4 +126,21 @@ def blood_micronutrients():
         fe_val,
     )
 
-    return jsonify(output), 200
+    return jsonify(ListMessageSchema().dump(output)), 200
+
+
+@main.route("/blood_hormones", methods=["POST"])
+def blood_hormones():
+    data = BloodHormonesSchema().load(request.get_json())
+
+    tsh_val = data["tsh"]
+    fsh_val = data["fsh"]
+    lh_val = data["lh"]
+
+    output = blood_hormones_test_agent(
+        tsh_val,
+        fsh_val,
+        lh_val,
+    )
+
+    return jsonify(ListMessageSchema().dump(output)), 200

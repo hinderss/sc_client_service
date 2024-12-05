@@ -1,7 +1,8 @@
 from flask import current_app
 
 from service.agents.abstract.auth_agent import AuthAgent
-from service.agents.abstract.blood_analysis import BloodAnalysisAgent
+from service.agents.abstract.blood_analysis import BloodVitaminAgent
+from service.agents.abstract.blood_hormones_test_agent import BloodHormonesTestAgent
 from service.agents.abstract.blood_micronutrients import BloodMicronutrientsAgent
 from service.agents.abstract.blood_test_agent import BloodTestAgent
 from service.agents.abstract.navigation_agent import NavigationAgent
@@ -38,7 +39,17 @@ def blood_test_agent(
     return agent.execute(wbc_val, rbc_val, platelets_val, node_lang)
 
 
-def blood_analysis_agent(
+def blood_hormones_test_agent(
+    tsh_val: float,
+    fsh_val: float,
+    lh_val: float,
+    node_lang: str = "rus",
+):
+    agent: BloodHormonesTestAgent = current_app.config["agents"]["blood_hormones_test_agent"]
+    return agent.execute(tsh_val, fsh_val, lh_val, node_lang)
+
+
+def blood_vitamin_agent(
     vitamin_e: float,
     vitamin_d: float,
     vitamin_k: float,
@@ -50,7 +61,7 @@ def blood_analysis_agent(
     vitamin_a: float,
     vitamin_b6: float,
 ):
-    agent: BloodAnalysisAgent = current_app.config["agents"]["blood_analysis_agent"]
+    agent: BloodVitaminAgent = current_app.config["agents"]["blood_vitamin_agent"]
     return agent.execute(
         vitamin_e,
         vitamin_d,

@@ -1,5 +1,4 @@
-from typing import Required
-from marshmallow import Schema, fields
+from marshmallow import Schema, fields, pre_load
 
 
 class AuthSchema(Schema):
@@ -12,10 +11,16 @@ class AuthSchema(Schema):
 
 
 class QuerySchema(Schema):
-    query = fields.Str(
-        required=True, error_messages={"required": "Search query is required."}
-    )
-    language = fields.Str(required=False, default="rus")
+    query = fields.Str(required=True, error_messages={"required": "Search query is required."})
+    language = fields.Str(required=False, default="rus", allow_none=True)
+
+    @pre_load
+    def process_inputs(self, data, **kwargs):
+        if 'query' in data and isinstance(data['query'], str):
+            data['query'] = data['query'].lower()
+        if 'language' in data and isinstance(data['language'], str):
+            data['language'] = data['language'].lower()
+        return data
 
 
 class BloodSchema(Schema):
@@ -36,8 +41,14 @@ class BloodAnalysisSchema(Schema):
     vitamin_a = fields.Float(required=True)
     vitamin_b6 = fields.Float(required=True)
 
-class BloodMicronutrientsSchema(Schema):
-    ca_val = fields.Float(required=True)
-    mg_val = fields.Float(required=True)
-    fe_val = fields.Float(required=True)
 
+class BloodMicronutrientsSchema(Schema):
+    ca = fields.Float(required=True)
+    mg = fields.Float(required=True)
+    fe = fields.Float(required=True)
+
+
+class BloodHormonesSchema(Schema):
+    tsh = fields.Float(required=True)
+    fsh = fields.Float(required=True)
+    lh = fields.Float(required=True)
