@@ -1,9 +1,23 @@
 from flask import Blueprint, request, jsonify
 
-from .schemas.input import AuthSchema as AuthInputSchema, QuerySchema, BloodSchema
+from .schemas.input import (
+    AuthSchema as AuthInputSchema,
+    BloodAnalysisSchema,
+    BloodMicronutrientsSchema,
+    QuerySchema,
+    BloodSchema,
+)
 from .schemas.output import AuthSchema as AuthOutputSchema
 from .schemas.output import RegSchema as RegOutputSchema
-from .services import auth_agent, reg_agent, navigation_agent, recommendation_agent, blood_test_agent
+from .services import (
+    auth_agent,
+    blood_analysis_agent,
+    blood_micronutrients_agent,
+    reg_agent,
+    navigation_agent,
+    recommendation_agent,
+    blood_test_agent,
+)
 
 main = Blueprint("main", __name__)
 
@@ -63,5 +77,53 @@ def blood():
     platelets = data["platelets"]
 
     output = blood_test_agent(wbc, rbc, platelets)
+
+    return jsonify(output), 200
+
+
+@main.route("/blood_analysis", methods=["POST"])
+def blood_analysis():
+    data = BloodAnalysisSchema().load(request.get_json())
+
+    vitamin_e = data["vitamin_e"]
+    vitamin_d = data["vitamin_d"]
+    vitamin_k = data["vitamin_k"]
+    vitamin_c = data["vitamin_c"]
+    vitamin_b1 = data["vitamin_b1"]
+    vitamin_b2 = data["vitamin_b2"]
+    vitamin_b9 = data["vitamin_b9"]
+    vitamin_b12 = data["vitamin_b12"]
+    vitamin_a = data["vitamin_a"]
+    vitamin_b6 = data["vitamin_b6"]
+
+    output = blood_analysis_agent(
+        vitamin_e,
+        vitamin_d,
+        vitamin_k,
+        vitamin_c,
+        vitamin_b1,
+        vitamin_b2,
+        vitamin_b9,
+        vitamin_b12,
+        vitamin_a,
+        vitamin_b6,
+    )
+
+    return jsonify(output), 200
+
+
+@main.route("/blood_micronutrients", methods=["POST"])
+def blood_micronutrients():
+    data = BloodMicronutrientsSchema().load(request.get_json())
+
+    ca_val = data["ca_val"]
+    mg_val = data["mg_val"]
+    fe_val = data["fe_val"]
+
+    output = blood_micronutrients_agent(
+        ca_val,
+        mg_val,
+        fe_val,
+    )
 
     return jsonify(output), 200
