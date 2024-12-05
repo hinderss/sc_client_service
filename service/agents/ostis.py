@@ -1,7 +1,5 @@
-import sys
 from enum import Enum
 import sc_client.client as client
-import requests
 from sc_client.models import (
     ScAddr,
     ScEventParams,
@@ -15,12 +13,20 @@ from sc_client.constants.common import ScEventType
 from sc_client.constants import sc_types
 from threading import Event  # Import Event for signaling
 
-from service.agents.abstract.auth_agent import AuthAgent
+from service.agents.abstract.auth_agent import AuthAgent, RegStatus, AuthStatus
+from service.agents.abstract.blood_analysis import BloodVitaminAgent
+from service.agents.abstract.blood_hormones_test_agent import BloodHormonesTestAgent
+from service.agents.abstract.blood_micronutrients import BloodMicronutrientsAgent
+from service.agents.abstract.navigation_agent import NavigationAgent
+from service.agents.abstract.recommendation_agent import RecommendationAgent
+from service.agents.abstract.blood_test_agent import BloodTestAgent
 from config import Config
+from service.exceptions import AgentError
 
 # Initialize payload and event
 payload = None
 callback_event = Event()
+
 
 def create_link(client, content: str):
     construction = ScConstruction()
@@ -29,30 +35,39 @@ def create_link(client, content: str):
     link = client.create_elements(construction)
     return link[0]
 
+
+def create_link_float(client, content: float):
+    construction = ScConstruction()
+    to_find_content = ScLinkContent(content, ScLinkContentType.FLOAT)
+    construction.create_link(sc_types.LINK_CONST, to_find_content)
+    link = client.create_elements(construction)
+    return link[0]
+
+
 def get_node(client) -> ScAddr:
     construction = ScConstruction()
     construction.create_node(sc_types.NODE_CONST)
     main_node: ScAddr = client.create_elements(construction)[0]
     return main_node
 
+
 def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
     global payload
     callback_event.clear()  # Clear the event at the start of callback
 
     succ_node = client.resolve_keynodes(
-        ScIdtfResolveParams(idtf='action_finished_successfully', type=sc_types.NODE_CONST_CLASS)
+        ScIdtfResolveParams(idtf="action_finished_successfully", type=sc_types.NODE_CONST_CLASS)
     )[0]
     unsucc_node = client.resolve_keynodes(
-        ScIdtfResolveParams(idtf='action_finished_unsuccessfully', type=sc_types.NODE_CONST_CLASS)
+        ScIdtfResolveParams(idtf="action_finished_unsuccessfully", type=sc_types.NODE_CONST_CLASS)
     )[0]
     node_err = client.resolve_keynodes(
-        ScIdtfResolveParams(idtf='action_finished_with_error', type=sc_types.NODE_CONST_CLASS)
+        ScIdtfResolveParams(idtf="action_finished_with_error", type=sc_types.NODE_CONST_CLASS)
     )[0]
 
-    respond_url = Config.PORTAL_URL
     if trg.value == succ_node.value:
         nrel_result = client.resolve_keynodes(
-            ScIdtfResolveParams(idtf='nrel_result', type=sc_types.NODE_CONST_CLASS)
+            ScIdtfResolveParams(idtf="nrel_result", type=sc_types.NODE_CONST_CLASS)
         )[0]
         res_templ = ScTemplate()
         res_templ.triple_with_relation(
@@ -60,42 +75,89 @@ def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
             sc_types.EDGE_D_COMMON_VAR,
             sc_types.NODE_VAR_STRUCT >> "_res_struct",
             sc_types.EDGE_ACCESS_VAR_POS_PERM,
-            nrel_result
+            nrel_result,
         )
         res_templ.triple(
             "_res_struct",
             sc_types.EDGE_ACCESS_VAR_POS_PERM,
-            sc_types.LINK_VAR >> "_link_res"
+            sc_types.LINK_VAR >> "_link_res",
         )
         gen_res = client.template_search(res_templ)[0]
         link_res = gen_res.get("_link_res")
         link_data = client.get_link_content(link_res)[0].data
-        payload = {"message": link_data}
+        payload = link_data
     elif trg.value == unsucc_node.value or trg.value == node_err.value:
-        payload = {"message": "Agent error"}
+        raise AgentError("Didn't find the node")
 
-    callback_event.set()  # Signal the event when done
-    print("Callback", payload)
+    callback_event.set()
     if not payload:
         return result.FAILURE
     return result.SUCCESS
+
+
+def call_back_multiple(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
+    global payload
+    callback_event.clear()  # Clear the event at the start of callback
+
+    succ_node = client.resolve_keynodes(
+        ScIdtfResolveParams(idtf="action_finished_successfully", type=sc_types.NODE_CONST_CLASS)
+    )[0]
+    unsucc_node = client.resolve_keynodes(
+        ScIdtfResolveParams(idtf="action_finished_unsuccessfully", type=sc_types.NODE_CONST_CLASS)
+    )[0]
+    node_err = client.resolve_keynodes(
+        ScIdtfResolveParams(idtf="action_finished_with_error", type=sc_types.NODE_CONST_CLASS)
+    )[0]
+
+    if trg.value == succ_node.value:
+        nrel_result = client.resolve_keynodes(
+            ScIdtfResolveParams(idtf="nrel_result", type=sc_types.NODE_CONST_CLASS)
+        )[0]
+        res_templ = ScTemplate()
+        res_templ.triple_with_relation(
+            src,
+            sc_types.EDGE_D_COMMON_VAR,
+            sc_types.NODE_VAR_STRUCT >> "_res_struct",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            nrel_result,
+        )
+        res_templ.triple(
+            "_res_struct",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            sc_types.LINK_VAR >> "_node_res",
+        )
+        diseases_result = []
+        for gen_res in client.template_search(res_templ):
+            link_res = gen_res.get("_node_res")
+            link_data = client.get_link_content(link_res)[0].data
+            diseases_result.append(link_data)
+
+        payload = diseases_result
+    elif trg.value == unsucc_node.value or trg.value == node_err.value:
+        raise AgentError("Didn't find the node")
+
+    callback_event.set()
+    if not payload:
+        return result.FAILURE
+    return result.SUCCESS
+
 
 class result(Enum):
     SUCCESS = 0
     FAILURE = 1
 
+
 class Ostis:
     def __init__(self, url):
         self.ostis_url = url
 
-    def call_agent(self, action_name: str, username, password) -> None:
-        global payload
+    def call_agent(self, action_name: str, username, password) -> str:
         client.connect(self.ostis_url)
         username_lnk = create_link(client, username)
         password_lnk = create_link(client, password)
-        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf='rrel_1', type=sc_types.NODE_CONST_ROLE))[0]
-        rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf='rrel_2', type=sc_types.NODE_CONST_ROLE))[0]
-        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf='action_initiated', type=sc_types.NODE_CONST_CLASS))[0]
+        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE))[0]
+        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
         action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf=action_name, type=sc_types.NODE_CONST_CLASS))[0]
         main_node = get_node(client)
 
@@ -105,14 +167,14 @@ class Ostis:
             sc_types.EDGE_ACCESS_VAR_POS_PERM,
             username_lnk,
             sc_types.EDGE_ACCESS_VAR_POS_PERM,
-            rrel_1
+            rrel_1,
         )
         template.triple_with_relation(
             main_node >> "_main_node",
             sc_types.EDGE_ACCESS_VAR_POS_PERM,
             password_lnk,
             sc_types.EDGE_ACCESS_VAR_POS_PERM,
-            rrel_2
+            rrel_2,
         )
         template.triple(
             action_agent,
@@ -129,13 +191,318 @@ class Ostis:
         client.events_create(event_params)
         client.template_generate(template)
 
+        global payload
+        if callback_event.wait(timeout=10):
+            while not payload:
+                continue
+            return payload
+        else:
+            raise AgentError(524, "Timeout")
+
+    def call_agent_blood_test(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang="rus", action="action_blood_test") -> None:
+        client.connect(self.ostis_url)
+
+        wbc_lnk = create_link_float(client, wbc_val)
+        rbc_lnk = create_link_float(client, rbc_val)
+        platelets_lnk = create_link_float(client, platelets_val)
+        node_lang_lnk = create_link(client, node_lang)
+
+        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_3 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_3", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_4 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_4", type=sc_types.NODE_CONST_ROLE))[0]
+
+        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf=action, type=sc_types.NODE_CONST_CLASS))[0]
+        main_node = get_node(client)
+
+        template = ScTemplate()
+        template.triple_with_relation(
+            main_node >> "_main_node",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            wbc_lnk,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            rrel_1,
+        )
+        template.triple_with_relation(
+            main_node >> "_main_node",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            rbc_lnk,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            rrel_2,
+        )
+        template.triple_with_relation(
+            main_node >> "_main_node",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            platelets_lnk,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            rrel_3,
+        )
+        template.triple_with_relation(
+            main_node >> "_main_node",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            node_lang_lnk,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            rrel_4,
+        )
+        template.triple(
+            action_agent,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            "_main_node",
+        )
+        template.triple(
+            initiated_node,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            "_main_node",
+        )
+
+        event_params = ScEventParams(main_node, ScEventType.ADD_INGOING_EDGE, call_back_multiple)
+        client.events_create(event_params)
+        client.template_generate(template)
+
         # Wait for the callback with a timeout
+        global payload
         if callback_event.wait(timeout=10):
             while not payload:
                 continue
             return payload  # Return the payload if event is set
         else:
-            return {"message": "Timeout: No response from agent"}
+            raise AgentError(524, "Timeout")
+
+    def call_navigation_agent(self, node_name: str, node_lang="rus") -> None:
+        global payload
+        client.connect(self.ostis_url)
+        node_lnk = create_link(client, node_name)
+        node_lang_lnk = create_link(client, node_lang)
+
+        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE))[0]
+
+        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_navigate", type=sc_types.NODE_CONST_CLASS))[0]
+        main_node = get_node(client)
+
+        template = ScTemplate()
+        template.triple_with_relation(
+            main_node >> "_main_node",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            node_lnk,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            rrel_1,
+        )
+        template.triple_with_relation(
+            main_node >> "_main_node",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            node_lang_lnk,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            rrel_2,
+        )
+        template.triple(
+            action_agent,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            "_main_node",
+        )
+        template.triple(
+            initiated_node,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            "_main_node",
+        )
+
+        event_params = ScEventParams(main_node, ScEventType.ADD_INGOING_EDGE, call_back)
+        client.events_create(event_params)
+        client.template_generate(template)
+
+        global payload
+        if callback_event.wait(timeout=10):
+            while not payload:
+                continue
+            return payload
+        else:
+            raise AgentError(524, "Timeout")
+
+    def call_recomendation_agent(self, node_name: str) -> None:
+        global payload
+        client.connect(self.ostis_url)
+        node_lnk = create_link(client, node_name)
+
+        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
+
+        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_rec", type=sc_types.NODE_CONST_CLASS))[0]
+        main_node = get_node(client)
+
+        template = ScTemplate()
+        template.triple_with_relation(
+            main_node >> "_main_node",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            node_lnk,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            rrel_1,
+        )
+        template.triple(
+            action_agent,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            "_main_node",
+        )
+        template.triple(
+            initiated_node,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            "_main_node",
+        )
+
+        event_params = ScEventParams(main_node, ScEventType.ADD_INGOING_EDGE, call_back)
+        client.events_create(event_params)
+        client.template_generate(template)
+
+        global payload
+        if callback_event.wait(timeout=10):
+            if payload == "none":
+                return None
+            while not payload:
+                continue
+            return payload
+        else:
+            raise AgentError(524, "Timeout")
+
+    def _get_parameter_rrel(self, client, id: int):
+        return client.resolve_keynodes(
+            ScIdtfResolveParams(idtf=f"rrel_{id}", type=sc_types.NODE_CONST_ROLE)
+        )[0]
+
+    def _get_const_class(self, client, class_name: str):
+        return client.resolve_keynodes(
+            ScIdtfResolveParams(idtf=class_name, type=sc_types.NODE_CONST_CLASS)
+        )[0]
+
+    def _add_parameter_templ(self, templ, main_node, rrel, lnk):
+        templ.triple_with_relation(
+            main_node >> "_main_node",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            lnk,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            rrel,
+        )
+
+    def _connect_to_main(self, templ, node):
+        templ.triple(
+            node,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            "_main_node",
+        )
+
+    def call_blood_vitamin_agent(
+        self,
+        vitamin_e: float,
+        vitamin_d: float,
+        vitamin_k: float,
+        vitamin_c: float,
+        vitamin_b1: float,
+        vitamin_b2: float,
+        vitamin_b9: float,
+        vitamin_b12: float,
+        vitamin_a: float,
+        vitamin_b6: float,
+    ):
+        client.connect(self.ostis_url)
+
+        vitamin_e_lnk = create_link_float(client, vitamin_e)
+        vitamin_d_lnk = create_link_float(client, vitamin_d)
+        vitamin_k_lnk = create_link_float(client, vitamin_k)
+        vitamin_c_lnk = create_link_float(client, vitamin_c)
+        vitamin_b1_lnk = create_link_float(client, vitamin_b1)
+        vitamin_b2_lnk = create_link_float(client, vitamin_b2)
+        vitamin_b9_lnk = create_link_float(client, vitamin_b9)
+        vitamin_b12_lnk = create_link_float(client, vitamin_b12)
+        vitamin_a_lnk = create_link_float(client, vitamin_a)
+        vitamin_b6_lnk = create_link_float(client, vitamin_b6)
+
+        rrel_1 = self._get_parameter_rrel(client, 1)
+        rrel_2 = self._get_parameter_rrel(client, 2)
+        rrel_3 = self._get_parameter_rrel(client, 3)
+        rrel_4 = self._get_parameter_rrel(client, 4)
+        rrel_5 = self._get_parameter_rrel(client, 5)
+        rrel_6 = self._get_parameter_rrel(client, 6)
+        rrel_7 = self._get_parameter_rrel(client, 7)
+        rrel_8 = self._get_parameter_rrel(client, 8)
+        rrel_9 = self._get_parameter_rrel(client, 9)
+        rrel_10 = self._get_parameter_rrel(client, 10)
+
+        initiated_node = self._get_const_class(client, "action_initiated")
+        action_agent = self._get_const_class(client, "action_blood_analysis")
+        main_node = get_node(client)
+
+        template = ScTemplate()
+        self._add_parameter_templ(template, main_node, rrel_1, vitamin_e_lnk)
+        self._add_parameter_templ(template, main_node, rrel_2, vitamin_d_lnk)
+        self._add_parameter_templ(template, main_node, rrel_3, vitamin_k_lnk)
+        self._add_parameter_templ(template, main_node, rrel_4, vitamin_c_lnk)
+        self._add_parameter_templ(template, main_node, rrel_5, vitamin_b1_lnk)
+        self._add_parameter_templ(template, main_node, rrel_6, vitamin_b2_lnk)
+        self._add_parameter_templ(template, main_node, rrel_7, vitamin_b9_lnk)
+        self._add_parameter_templ(template, main_node, rrel_8, vitamin_b12_lnk)
+        self._add_parameter_templ(template, main_node, rrel_9, vitamin_a_lnk)
+        self._add_parameter_templ(template, main_node, rrel_10, vitamin_b6_lnk)
+
+        self._connect_to_main(template, action_agent)
+        self._connect_to_main(template, initiated_node)
+
+        event_params = ScEventParams(
+            main_node, ScEventType.ADD_INGOING_EDGE, call_back_multiple
+        )
+        client.events_create(event_params)
+        client.template_generate(template)
+
+        global payload
+        if callback_event.wait(timeout=10):
+            while not payload:
+                continue
+            return payload
+        else:
+            raise AgentError(524, "Timeout")
+
+    def call_blood_micronutrients_agent(
+        self, ca_val: float, mg_val: float, fe_val: float
+    ):
+        client.connect(self.ostis_url)
+
+        fe_val_lnk = create_link_float(client, ca_val)
+        ca_val_lnk = create_link_float(client, mg_val)
+        mg_val_lnk = create_link_float(client, fe_val)
+
+        rrel_1 = self._get_parameter_rrel(client, 1)
+        rrel_2 = self._get_parameter_rrel(client, 2)
+        rrel_3 = self._get_parameter_rrel(client, 3)
+
+        initiated_node = self._get_const_class(client, "action_initiated")
+        action_agent = self._get_const_class(
+            client, "action_blood_micronutrients_analysis"
+        )
+        main_node = get_node(client)
+
+        template = ScTemplate()
+        self._add_parameter_templ(template, main_node, rrel_1, fe_val_lnk)
+        self._add_parameter_templ(template, main_node, rrel_2, ca_val_lnk)
+        self._add_parameter_templ(template, main_node, rrel_3, mg_val_lnk)
+        self._connect_to_main(template, action_agent)
+        self._connect_to_main(template, initiated_node)
+
+        event_params = ScEventParams(
+            main_node, ScEventType.ADD_INGOING_EDGE, call_back_multiple
+        )
+        client.events_create(event_params)
+        client.template_generate(template)
+        print("Finished generating")
+
+        global payload
+        if callback_event.wait(timeout=10):
+            if payload == "none":
+                return None
+            while not payload:
+                continue
+            return payload
+        else:
+            raise AgentError(524, "Timeout")
+
 
 class OstisAuthAgent(AuthAgent):
     def __init__(self):
@@ -144,23 +511,124 @@ class OstisAuthAgent(AuthAgent):
     def reg_agent(self, username: str, password: str):
         global payload
         payload = None
-        return self.ostis.call_agent("action_reg", username, password)
+        agent_response = self.ostis.call_agent("action_reg", username, password)
+        if agent_response == "User created":
+            return {"status": RegStatus.CREATED}
+        elif agent_response == "User exists":
+            return {
+                "status": RegStatus.EXISTS,
+                "message": "User with these credentials already exists.",
+            }
+        raise AgentError("Reg agent error")
 
     def auth_agent(self, username: str, password: str):
         global payload
         payload = None
-        return self.ostis.call_agent("action_auth", username, password)
+        agent_response = self.ostis.call_agent("action_auth", username, password)
+        if agent_response == "Valid":
+            return {"status": AuthStatus.VALID}
+        elif agent_response == "Invalid":
+            return {
+                "status": AuthStatus.INVALID,
+                "message": "Invalid credentials",
+            }
+        raise AgentError("Auth agent error")
 
-def auth_agent(username: str, password: str) -> None:
-    ostis = Ostis(Config.OSTIS_URL)
-    return ostis.call_agent("action_auth", username, password)
 
-def reg_agent(username: str, password: str) -> None:
-    ostis = Ostis(Config.OSTIS_URL)
-    return ostis.call_agent("action_reg", username, password)
+class OstisBloodTestAgent(BloodTestAgent):
+    def __init__(self):
+        self.ostis = Ostis(Config.OSTIS_URL)
 
-if __name__ == "__main__":
-    if sys.argv[1] == "a":
-        print(auth_agent(sys.argv[2], sys.argv[3]))
-    elif sys.argv[1] == "r":
-        print(reg_agent(sys.argv[2], sys.argv[3]))
+    def execute(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang: str = "rus"):
+        global payload
+        payload = None
+        output = self.ostis.call_agent_blood_test(wbc_val, rbc_val, platelets_val, node_lang)
+        if sorted(output) == sorted(["No disease"]):
+            output = None
+        return {"message": output}
+
+
+class OstisHormonesBloodTestAgent(BloodHormonesTestAgent):
+    def __init__(self):
+        self.ostis = Ostis(Config.OSTIS_URL)
+
+    def execute(self, tsh_val: float, fsh_val: float, lh_val: float, node_lang: str = "rus"):
+        global payload
+        payload = None
+        output = self.ostis.call_agent_blood_test(tsh_val, fsh_val, lh_val, node_lang, "action_blood_test_for_hormones")
+        if sorted(output) == sorted(["No disease"]):
+            output = None
+        return {"message": output}
+
+
+class OstisRecommendationAgent(RecommendationAgent):
+    def __init__(self):
+        self.ostis = Ostis(Config.OSTIS_URL)
+
+    def execute(self, node_name: str):
+        global payload
+        payload = None
+        return {"message": self.ostis.call_recomendation_agent(node_name)}
+
+
+class OstisNavigationAgent(NavigationAgent):
+    def __init__(self):
+        self.ostis = Ostis(Config.OSTIS_URL)
+
+    def execute(self, node_name: str, node_lang: str = "rus"):
+        global payload
+        payload = None
+        return {"message": self.ostis.call_navigation_agent(node_name, node_lang)}
+
+
+class OstisBloodVitaminAgent(BloodVitaminAgent):
+    def __init__(self):
+        self.ostis = Ostis(Config.OSTIS_URL)
+
+    def execute(
+        self,
+        vitamin_e: float,
+        vitamin_d: float,
+        vitamin_k: float,
+        vitamin_c: float,
+        vitamin_b1: float,
+        vitamin_b2: float,
+        vitamin_b9: float,
+        vitamin_b12: float,
+        vitamin_a: float,
+        vitamin_b6: float,
+    ):
+        global payload
+        payload = None
+        return {
+            "message": self.ostis.call_blood_vitamin_agent(
+                vitamin_e,
+                vitamin_d,
+                vitamin_k,
+                vitamin_c,
+                vitamin_b1,
+                vitamin_b2,
+                vitamin_b9,
+                vitamin_b12,
+                vitamin_a,
+                vitamin_b6,
+            )
+        }
+
+
+class OstisBloodMicronutrientsAgent(BloodMicronutrientsAgent):
+    def __init__(self):
+        self.ostis = Ostis(Config.OSTIS_URL)
+
+    def execute(
+        self,
+        ca_val: float,
+        mg_val: float,
+        fe_val: float
+    ):
+        global payload
+        payload = None
+        output = self.ostis.call_blood_micronutrients_agent(ca_val, mg_val, fe_val)
+        if sorted(output) == sorted(["Nothing"]):
+            output = None
+        return {"message": output}
