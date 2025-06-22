@@ -1,8 +1,10 @@
 from enum import Enum
+from collections import Counter
 import sc_client.client as client
 from sc_client.models import (
     ScAddr,
-    ScEventParams,
+    # ScEventSubscriptionParams,
+    ScEventSubscriptionParams,
     ScConstruction,
     ScIdtfResolveParams,
     ScLinkContent,
@@ -10,13 +12,14 @@ from sc_client.models import (
     ScTemplate,
 )
 from sc_client.constants.common import ScEventType
-from sc_client.constants import sc_types
+from sc_client.constants import sc_types, sc_type
 from threading import Event  # Import Event for signaling
 
 from service.agents.abstract.auth_agent import AuthAgent, RegStatus, AuthStatus
 from service.agents.abstract.blood_analysis import BloodVitaminAgent
 from service.agents.abstract.blood_hormones_test_agent import BloodHormonesTestAgent
 from service.agents.abstract.blood_micronutrients import BloodMicronutrientsAgent
+from service.agents.abstract.diagnosis_agent import DiagnosisAgent
 from service.agents.abstract.navigation_agent import NavigationAgent
 from service.agents.abstract.recommendation_agent import RecommendationAgent
 from service.agents.abstract.blood_test_agent import BloodTestAgent
@@ -24,8 +27,20 @@ from config import Config
 from service.exceptions import AgentError
 
 # Initialize payload and event
+diagnostic_history = []
 payload = None
 callback_event = Event()
+
+
+def remove_elements(list1, list2):
+    counter2 = Counter(list2)
+    result = []
+    for item in list1:
+        if counter2[item] > 0:
+            counter2[item] -= 1
+        else:
+            result.append(item)
+    return result
 
 
 def create_link(client, content: str):
@@ -44,9 +59,9 @@ def create_link_float(client, content: float):
     return link[0]
 
 
-def get_node(client) -> ScAddr:
+def get_node(client, alias=None) -> ScAddr:
     construction = ScConstruction()
-    construction.create_node(sc_types.NODE_CONST)
+    construction.create_node(sc_types.NODE_CONST, alias)
     main_node: ScAddr = client.create_elements(construction)[0]
     return main_node
 
@@ -56,7 +71,7 @@ def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
     callback_event.clear()  # Clear the event at the start of callback
 
     succ_node = client.resolve_keynodes(
-        ScIdtfResolveParams(idtf="action_finished_successfully", type=sc_types.NODE_CONST_CLASS)
+        ScIdtfResolveParams(idtf="action_finished_successfully", type=sc_type.CONST)
     )[0]
     unsucc_node = client.resolve_keynodes(
         ScIdtfResolveParams(idtf="action_finished_unsuccessfully", type=sc_types.NODE_CONST_CLASS)
@@ -82,7 +97,8 @@ def call_back(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
             sc_types.EDGE_ACCESS_VAR_POS_PERM,
             sc_types.LINK_VAR >> "_link_res",
         )
-        gen_res = client.template_search(res_templ)[0]
+        gen_res = client.template_search(res_templ)
+        gen_res = gen_res[0]
         link_res = gen_res.get("_link_res")
         link_data = client.get_link_content(link_res)[0].data
         payload = link_data
@@ -142,6 +158,56 @@ def call_back_multiple(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
     return result.SUCCESS
 
 
+def call_back_diagnostics_result(src: ScAddr, connector: ScAddr, trg: ScAddr) -> Enum:
+    global payload
+    callback_event.clear()  # Clear the event at the start of callback
+
+    succ_node = client.resolve_keynodes(
+        ScIdtfResolveParams(idtf="action_finished_successfully", type=sc_types.NODE_CONST_CLASS)
+    )[0]
+    unsucc_node = client.resolve_keynodes(
+        ScIdtfResolveParams(idtf="action_finished_unsuccessfully", type=sc_types.NODE_CONST_CLASS)
+    )[0]
+    node_err = client.resolve_keynodes(
+        ScIdtfResolveParams(idtf="action_finished_with_error", type=sc_types.NODE_CONST_CLASS)
+    )[0]
+
+    if trg.value == succ_node.value:
+        diagnostics_result = client.resolve_keynodes(
+            ScIdtfResolveParams(idtf="diagnostics_result", type=sc_types.NODE_CONST_NOROLE)
+        )[0]
+        nrel_system_identifier = client.resolve_keynodes(
+            ScIdtfResolveParams(idtf="nrel_system_identifier", type=sc_types.NODE_CONST_NOROLE)
+        )[0]
+        res_templ = ScTemplate()
+        res_templ.triple(
+            diagnostics_result,
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            sc_types.NODE_VAR_CLASS >> "_res_struct",
+        )
+        res_templ.triple_with_relation(
+            "_res_struct",
+            sc_types.EDGE_D_COMMON_VAR,
+            sc_types.LINK_VAR >> "_node_res",
+            sc_types.EDGE_ACCESS_VAR_POS_PERM,
+            nrel_system_identifier,
+        )
+        diseases_result = []
+        for gen_res in client.template_search(res_templ):
+            link_res = gen_res.get("_node_res")
+            link_data = client.get_link_content(link_res)[0].data
+            diseases_result.append(link_data)
+
+        payload = diseases_result
+    elif trg.value == unsucc_node.value or trg.value == node_err.value:
+        raise AgentError("Didn't find the node")
+
+    callback_event.set()
+    if not payload:
+        return result.FAILURE
+    return result.SUCCESS
+
+
 class result(Enum):
     SUCCESS = 0
     FAILURE = 1
@@ -157,7 +223,8 @@ class Ostis:
         password_lnk = create_link(client, password)
         rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
         rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE))[0]
-        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        initiated_node = \
+        client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
         action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf=action_name, type=sc_types.NODE_CONST_CLASS))[0]
         main_node = get_node(client)
 
@@ -187,7 +254,7 @@ class Ostis:
             "_main_node",
         )
 
-        event_params = ScEventParams(main_node, ScEventType.ADD_INGOING_EDGE, call_back)
+        event_params = ScEventSubscriptionParams(main_node, ScEventType.ADD_INGOING_EDGE, call_back)
         client.events_create(event_params)
         client.template_generate(template)
 
@@ -199,7 +266,8 @@ class Ostis:
         else:
             raise AgentError(524, "Timeout")
 
-    def call_agent_blood_test(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang="rus", action="action_blood_test") -> None:
+    def call_agent_blood_test(self, wbc_val: float, rbc_val: float, platelets_val: float, node_lang="rus",
+                              action="action_blood_test") -> None:
         client.connect(self.ostis_url)
 
         wbc_lnk = create_link_float(client, wbc_val)
@@ -212,7 +280,8 @@ class Ostis:
         rrel_3 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_3", type=sc_types.NODE_CONST_ROLE))[0]
         rrel_4 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_4", type=sc_types.NODE_CONST_ROLE))[0]
 
-        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        initiated_node = \
+        client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
         action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf=action, type=sc_types.NODE_CONST_CLASS))[0]
         main_node = get_node(client)
 
@@ -256,9 +325,9 @@ class Ostis:
             "_main_node",
         )
 
-        event_params = ScEventParams(main_node, ScEventType.ADD_INGOING_EDGE, call_back_multiple)
-        client.events_create(event_params)
-        client.template_generate(template)
+        event_params = ScEventSubscriptionParams(main_node, ScEventType.AFTER_GENERATE_INCOMING_ARC, call_back_multiple)
+        client.create_elementary_event_subscriptions(event_params)
+        client.generate_by_template(template)
 
         # Wait for the callback with a timeout
         global payload
@@ -275,11 +344,13 @@ class Ostis:
         node_lnk = create_link(client, node_name)
         node_lang_lnk = create_link(client, node_lang)
 
-        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
-        rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_2", type=sc_types.NODE_CONST_ROLE))[0]
+        rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_type.CONST_NODE_ROLE))[0]
+        rrel_2 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_2", type=sc_type.CONST_NODE_ROLE))[0]
 
-        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
-        action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_navigate", type=sc_types.NODE_CONST_CLASS))[0]
+        initiated_node = \
+        client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_type.CONST_NODE_ROLE))[0]
+        action_agent = \
+        client.resolve_keynodes(ScIdtfResolveParams(idtf="action_navigate", type=sc_type.CONST_NODE_ROLE))[0]
         main_node = get_node(client)
 
         template = ScTemplate()
@@ -308,9 +379,9 @@ class Ostis:
             "_main_node",
         )
 
-        event_params = ScEventParams(main_node, ScEventType.ADD_INGOING_EDGE, call_back)
-        client.events_create(event_params)
-        client.template_generate(template)
+        event_params = ScEventSubscriptionParams(main_node, ScEventType.AFTER_GENERATE_INCOMING_ARC, call_back)
+        client.create_elementary_event_subscriptions(event_params)
+        client.generate_by_template(template)
 
         global payload
         if callback_event.wait(timeout=10):
@@ -327,7 +398,8 @@ class Ostis:
 
         rrel_1 = client.resolve_keynodes(ScIdtfResolveParams(idtf="rrel_1", type=sc_types.NODE_CONST_ROLE))[0]
 
-        initiated_node = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
+        initiated_node = \
+        client.resolve_keynodes(ScIdtfResolveParams(idtf="action_initiated", type=sc_types.NODE_CONST_CLASS))[0]
         action_agent = client.resolve_keynodes(ScIdtfResolveParams(idtf="action_rec", type=sc_types.NODE_CONST_CLASS))[0]
         main_node = get_node(client)
 
@@ -350,7 +422,7 @@ class Ostis:
             "_main_node",
         )
 
-        event_params = ScEventParams(main_node, ScEventType.ADD_INGOING_EDGE, call_back)
+        event_params = ScEventSubscriptionParams(main_node, ScEventType.AFTER_GENERATE_INCOMING_ARC, call_back)
         client.events_create(event_params)
         client.template_generate(template)
 
@@ -391,17 +463,17 @@ class Ostis:
         )
 
     def call_blood_vitamin_agent(
-        self,
-        vitamin_e: float,
-        vitamin_d: float,
-        vitamin_k: float,
-        vitamin_c: float,
-        vitamin_b1: float,
-        vitamin_b2: float,
-        vitamin_b9: float,
-        vitamin_b12: float,
-        vitamin_a: float,
-        vitamin_b6: float,
+            self,
+            vitamin_e: float,
+            vitamin_d: float,
+            vitamin_k: float,
+            vitamin_c: float,
+            vitamin_b1: float,
+            vitamin_b2: float,
+            vitamin_b9: float,
+            vitamin_b12: float,
+            vitamin_a: float,
+            vitamin_b6: float,
     ):
         client.connect(self.ostis_url)
 
@@ -446,7 +518,7 @@ class Ostis:
         self._connect_to_main(template, action_agent)
         self._connect_to_main(template, initiated_node)
 
-        event_params = ScEventParams(
+        event_params = ScEventSubscriptionParams(
             main_node, ScEventType.ADD_INGOING_EDGE, call_back_multiple
         )
         client.events_create(event_params)
@@ -460,9 +532,7 @@ class Ostis:
         else:
             raise AgentError(524, "Timeout")
 
-    def call_blood_micronutrients_agent(
-        self, ca_val: float, mg_val: float, fe_val: float
-    ):
+    def call_blood_micronutrients_agent(self, ca_val: float, mg_val: float, fe_val: float):
         client.connect(self.ostis_url)
 
         fe_val_lnk = create_link_float(client, ca_val)
@@ -486,7 +556,7 @@ class Ostis:
         self._connect_to_main(template, action_agent)
         self._connect_to_main(template, initiated_node)
 
-        event_params = ScEventParams(
+        event_params = ScEventSubscriptionParams(
             main_node, ScEventType.ADD_INGOING_EDGE, call_back_multiple
         )
         client.events_create(event_params)
@@ -497,6 +567,40 @@ class Ostis:
         if callback_event.wait(timeout=10):
             if payload == "none":
                 return None
+            while not payload:
+                continue
+            return payload
+        else:
+            raise AgentError(524, "Timeout")
+
+    def call_diagnosis_agent(self, symptoms: list[str]):
+        client.connect(self.ostis_url)
+        second_node = create_link(client, "second_node")
+        symptoms_links = [create_link(client, symptom_str) for symptom_str in symptoms]
+
+        rrel_1 = self._get_parameter_rrel(client, 1)
+
+        initiated_node = self._get_const_class(client, "action_initiated")
+        action_agent = self._get_const_class(client, "action_diagnost_symptoms")
+        main_node = get_node(client)
+
+        template = ScTemplate()
+        self._add_parameter_templ(template, main_node, rrel_1, second_node)
+        for symptom_link in symptoms_links:
+            template.triple(
+                second_node,
+                sc_types.EDGE_ACCESS_VAR_POS_PERM,
+                symptom_link,
+            )
+        self._connect_to_main(template, action_agent)
+        self._connect_to_main(template, initiated_node)
+
+        event_params = ScEventSubscriptionParams(main_node, ScEventType.AFTER_GENERATE_INCOMING_ARC, call_back_diagnostics_result)
+        client.events_create(event_params)
+        client.template_generate(template)
+
+        global payload
+        if callback_event.wait(timeout=10):
             while not payload:
                 continue
             return payload
@@ -586,17 +690,17 @@ class OstisBloodVitaminAgent(BloodVitaminAgent):
         self.ostis = Ostis(Config.OSTIS_URL)
 
     def execute(
-        self,
-        vitamin_e: float,
-        vitamin_d: float,
-        vitamin_k: float,
-        vitamin_c: float,
-        vitamin_b1: float,
-        vitamin_b2: float,
-        vitamin_b9: float,
-        vitamin_b12: float,
-        vitamin_a: float,
-        vitamin_b6: float,
+            self,
+            vitamin_e: float,
+            vitamin_d: float,
+            vitamin_k: float,
+            vitamin_c: float,
+            vitamin_b1: float,
+            vitamin_b2: float,
+            vitamin_b9: float,
+            vitamin_b12: float,
+            vitamin_a: float,
+            vitamin_b6: float,
     ):
         global payload
         payload = None
@@ -621,10 +725,10 @@ class OstisBloodMicronutrientsAgent(BloodMicronutrientsAgent):
         self.ostis = Ostis(Config.OSTIS_URL)
 
     def execute(
-        self,
-        ca_val: float,
-        mg_val: float,
-        fe_val: float
+            self,
+            ca_val: float,
+            mg_val: float,
+            fe_val: float
     ):
         global payload
         payload = None
@@ -632,3 +736,22 @@ class OstisBloodMicronutrientsAgent(BloodMicronutrientsAgent):
         if sorted(output) == sorted(["Nothing"]):
             output = None
         return {"message": output}
+
+
+class OstisDiagnosisAgent(DiagnosisAgent):
+    def __init__(self):
+        self.ostis = Ostis(Config.OSTIS_URL)
+
+    def execute(self, symptoms: list[str]):
+        global payload
+        payload = None
+        output = self.ostis.call_diagnosis_agent(symptoms)
+        print(diagnostic_history)
+        print(output)
+        output = remove_elements(output, diagnostic_history)
+        diagnostic_history.extend(output)
+        print(output)
+        results = []
+        for result in output:
+            results.append({"disease": result, "probability": round(1 / len(output), 2)})
+        return {"message": results}

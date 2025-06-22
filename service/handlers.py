@@ -4,11 +4,11 @@ from .schemas.base import SchemaValidationError
 
 
 def register_error_handlers(app):
-    @app.errorhandler(APIError)
-    def handle_api_error(error):
-        response = jsonify(error.to_dict())
-        response.status_code = error.code
-        return response
+    # @app.errorhandler(APIError)
+    # def handle_api_error(error):
+    #     response = jsonify(error.to_dict())
+    #     response.status_code = error.code
+    #     return response
 
     @app.errorhandler(404)
     def handle_not_found_error(error):
@@ -32,10 +32,10 @@ def register_error_handlers(app):
             "message": error.message
         }), error.code
 
-    @app.errorhandler(Exception)
-    def handle_unexpected_error(error):
-        return jsonify({
-            "error": "unexpected_error",
-            "message": str(error)
-        }), 500
+    # @app.errorhandler(Exception)
+    # def handle_unexpected_error(error):
+    #     return jsonify({
+    #         "error": "unexpected_error",
+    #         "message": str(error)
+    #     }), 500
 

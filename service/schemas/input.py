@@ -3,10 +3,12 @@ from marshmallow import Schema, fields, pre_load
 
 class AuthSchema(Schema):
     username = fields.Str(
-        required=True, error_messages={"required": "Username is required."}
+        required=True,
+        error_messages={"required": "Username is required."},
     )
     password = fields.Str(
-        required=True, error_messages={"required": "Password is required."}
+        required=True,
+        error_messages={"required": "Password is required."},
     )
 
 
@@ -52,3 +54,7 @@ class BloodHormonesSchema(Schema):
     tsh = fields.Float(required=True)
     fsh = fields.Float(required=True)
     lh = fields.Float(required=True)
+
+
+class DiagnosisSchema(Schema):
+    symptoms = fields.List(fields.Str, required=True)

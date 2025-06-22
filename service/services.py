@@ -5,6 +5,7 @@ from service.agents.abstract.blood_analysis import BloodVitaminAgent
 from service.agents.abstract.blood_hormones_test_agent import BloodHormonesTestAgent
 from service.agents.abstract.blood_micronutrients import BloodMicronutrientsAgent
 from service.agents.abstract.blood_test_agent import BloodTestAgent
+from service.agents.abstract.diagnosis_agent import DiagnosisAgent
 from service.agents.abstract.navigation_agent import NavigationAgent
 from service.agents.abstract.recommendation_agent import RecommendationAgent
 
@@ -81,3 +82,8 @@ def blood_micronutrients_agent(ca_val: float, mg_val: float, fe_val: float):
         "blood_micronutrients_agent"
     ]
     return agent.execute(ca_val, mg_val, fe_val)
+
+
+def diagnosis_agent(symptoms):
+    agent: DiagnosisAgent = current_app.config["agents"]["diagnosis_agent"]
+    return agent.execute(symptoms)

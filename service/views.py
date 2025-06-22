@@ -5,9 +5,9 @@ from .schemas.input import (
     BloodAnalysisSchema,
     BloodMicronutrientsSchema,
     QuerySchema,
-    BloodSchema, BloodHormonesSchema,
+    BloodSchema, BloodHormonesSchema, DiagnosisSchema,
 )
-from .schemas.output import AuthSchema as AuthOutputSchema, BaseMessageSchema, ListMessageSchema
+from .schemas.output import AuthSchema as AuthOutputSchema, BaseMessageSchema, ListMessageSchema, ListOfDictsMessageSchema
 from .schemas.output import RegSchema as RegOutputSchema
 from .services import (
     auth_agent,
@@ -16,7 +16,7 @@ from .services import (
     reg_agent,
     navigation_agent,
     recommendation_agent,
-    blood_test_agent, blood_hormones_test_agent,
+    blood_test_agent, blood_hormones_test_agent, diagnosis_agent,
 )
 
 main = Blueprint("main", __name__)
@@ -109,7 +109,7 @@ def blood_analysis():
         vitamin_b6,
     )
 
-    return jsonify(ListMessageSchema().dump(output)), 200
+    return jsonify(ListOfDictsMessageSchema().dump(output)), 200
 
 
 @main.route("/blood_micronutrients", methods=["POST"])
@@ -126,7 +126,7 @@ def blood_micronutrients():
         fe_val,
     )
 
-    return jsonify(ListMessageSchema().dump(output)), 200
+    return jsonify(ListOfDictsMessageSchema().dump(output)), 200
 
 
 @main.route("/blood_hormones", methods=["POST"])
@@ -144,3 +144,14 @@ def blood_hormones():
     )
 
     return jsonify(ListMessageSchema().dump(output)), 200
+
+
+@main.route("/diagnosis", methods=["POST"])
+def diagnosis():
+    data = DiagnosisSchema().load(request.get_json())
+
+    symptoms = data["symptoms"]
+
+    output = diagnosis_agent(symptoms)
+
+    return jsonify(ListOfDictsMessageSchema().dump(output)), 200
